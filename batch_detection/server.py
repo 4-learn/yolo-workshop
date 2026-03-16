@@ -17,10 +17,11 @@ import os
 
 app = FastAPI(title="PPE Detection API")
 
-# yolov8n 預設模型：0=person, ...（80 類 COCO）
-# 偵測到 person → alert（代表有人但不確定是否穿戴 PPE）
-ALERT_CLASSES = {"person"}
-MODEL_PATH = "yolov8n.pt"
+# PPE 模型：0=head（沒戴安全帽）, 1=helmet（有戴安全帽）
+# 偵測到 head → alert
+LABEL_MAP = {0: "head", 1: "helmet"}
+ALERT_CLASSES = {"head"}
+MODEL_PATH = "best.pt"
 
 # 啟動時載入模型（只載入一次）
 model = YOLO(MODEL_PATH)
@@ -60,7 +61,7 @@ async def detect(
                 continue
 
             x1, y1, x2, y2 = box.xyxy[0].tolist()
-            label = results[0].names[class_id]
+            label = LABEL_MAP.get(class_id, f"unknown_{class_id}")
 
             event = {
                 "event_type": f"{label}_detected",

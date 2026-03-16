@@ -57,17 +57,17 @@ def main():
         result = detect_image(image_path)
 
         count = result["event_count"]
-        alert_flag = " ⚠️ ALERT: person_detected" if result["alert"] else ""
+        alert_flag = " ⚠️ ALERT: head_detected" if result["alert"] else ""
         print(f"[{i}/{total}] {filename} → {count} events{alert_flag}")
 
         all_events.extend(result["events"])
 
         if result["alert"]:
-            person_count = sum(
+            head_count = sum(
                 1 for e in result["events"]
-                if e["event_type"] == "person_detected"
+                if e["event_type"] == "head_detected"
             )
-            alerts.append({"image": filename, "person_count": person_count})
+            alerts.append({"image": filename, "head_count": head_count})
 
     # 3. 寫入 JSON
     with open(OUTPUT_FILE, "w") as f:
@@ -80,7 +80,7 @@ def main():
     if alerts:
         print(f"\n=== Alert 摘要 ===")
         for a in alerts:
-            print(f"⚠️ {a['image']}: {a['person_count']} 筆 person_detected")
+            print(f"⚠️ {a['image']}: {a['head_count']} 筆 head_detected")
     else:
         print("\n✅ 所有圖片皆配戴安全帽，無 alert")
 
