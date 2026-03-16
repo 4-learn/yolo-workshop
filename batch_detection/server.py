@@ -6,86 +6,65 @@
 
 測試：
   curl -X POST http://localhost:8000/detect \
-    -F "file=@images/test1.jpg"
+    -F "file=@images/mixed1.jpg"
 """
 
-from fastapi import FastAPI, UploadFile, Query
+from fastapi import FastAPI, UploadFile
 from ultralytics import YOLO
 from datetime import datetime, timezone
-import tempfile
 import os
 
-app = FastAPI(title="PPE Detection API")
+app = FastAPI()
 
 # PPE 模型：0=head（沒戴安全帽）, 1=helmet（有戴安全帽）
-# 偵測到 head → alert
 LABEL_MAP = {0: "head", 1: "helmet"}
-ALERT_CLASSES = {"head"}
-MODEL_PATH = "best.pt"
-
-# 啟動時載入模型（只載入一次）
-model = YOLO(MODEL_PATH)
+model = YOLO("best.pt")
 
 
 @app.post("/detect")
-async def detect(
-    file: UploadFile,
-    min_confidence: float = Query(default=0.0, ge=0.0, le=1.0),
-):
-    """
-    接收圖片，回傳偵測事件 JSON
+async def detect(file: UploadFile):
+    # 1. 把上傳的圖片存到本地
+    content = await file.read()
+    with open("temp.jpg", "wb") as f:
+        f.write(content)
 
-    - file: 上傳的圖片
-    - min_confidence: 最低信心閾值（Query parameter）
-    """
-    # 1. 存成暫存檔
-    suffix = os.path.splitext(file.filename or "img.jpg")[1]
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
+    # 2. YOLO 推論
+    results = model("temp.jpg")
 
-    try:
-        # 2. YOLO 推論
-        results = model(tmp_path)
+    # 3. 組成事件陣列
+    events = []
+    has_alert = False
 
-        # 3. 組成事件陣列
-        events = []
-        has_alert = False
+    for box in results[0].boxes:
+        class_id = int(box.cls[0])
+        confidence = float(box.conf[0])
+        x1, y1, x2, y2 = box.xyxy[0].tolist()
+        label = LABEL_MAP[class_id]
 
-        for box in results[0].boxes:
-            class_id = int(box.cls[0])
-            confidence = float(box.conf[0])
-
-            if confidence < min_confidence:
-                continue
-
-            x1, y1, x2, y2 = box.xyxy[0].tolist()
-            label = LABEL_MAP.get(class_id, f"unknown_{class_id}")
-
-            event = {
-                "event_type": f"{label}_detected",
-                "confidence": round(confidence, 4),
-                "bbox": {
-                    "x1": round(x1, 2),
-                    "y1": round(y1, 2),
-                    "x2": round(x2, 2),
-                    "y2": round(y2, 2),
-                },
-                "source_image": file.filename,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-            events.append(event)
-
-            # 4. 偵測到 person → alert
-            if label in ALERT_CLASSES:
-                has_alert = True
-
-        return {
+        event = {
+            "event_type": f"{label}_detected",
+            "confidence": round(confidence, 4),
+            "bbox": {
+                "x1": round(x1, 2),
+                "y1": round(y1, 2),
+                "x2": round(x2, 2),
+                "y2": round(y2, 2),
+            },
             "source_image": file.filename,
-            "event_count": len(events),
-            "alert": has_alert,
-            "events": events,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-    finally:
-        os.unlink(tmp_path)
+        events.append(event)
+
+        # 4. 沒戴安全帽 → alert
+        if label == "head":
+            has_alert = True
+
+    # 5. 清理暫存檔
+    os.remove("temp.jpg")
+
+    return {
+        "source_image": file.filename,
+        "event_count": len(events),
+        "alert": has_alert,
+        "events": events,
+    }

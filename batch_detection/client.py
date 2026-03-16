@@ -14,15 +14,17 @@ import requests
 import json
 import os
 import sys
+import time
+from datetime import datetime
 
 API_URL = "http://localhost:8000/detect"
 IMAGE_DIR = "images"
 OUTPUT_FILE = "results.json"
 
 
-def detect_image(image_path):
+def detect_image(filename):
     """送一張圖片給 API，回傳偵測結果"""
-    filename = os.path.basename(image_path)
+    image_path = os.path.join(IMAGE_DIR, filename)
     with open(image_path, "rb") as f:
         response = requests.post(
             API_URL,
@@ -51,14 +53,18 @@ def main():
     all_events = []
     alerts = []
 
-    # 2. 逐一送圖片
+    # 2. 逐一送圖片（同步：一張等完才送下一張）
+    total_start = time.time()
+
     for i, filename in enumerate(image_files, 1):
-        image_path = os.path.join(IMAGE_DIR, filename)
-        result = detect_image(image_path)
+        ts = datetime.now().strftime("%H:%M:%S")
+        t0 = time.time()
+        result = detect_image(filename)
+        elapsed = time.time() - t0
 
         count = result["event_count"]
         alert_flag = " ⚠️ ALERT: head_detected" if result["alert"] else ""
-        print(f"[{i}/{total}] {filename} → {count} events{alert_flag}")
+        print(f"[{i}/{total}] {ts} {filename} → {count} events ({elapsed:.2f}s){alert_flag}")
 
         all_events.extend(result["events"])
 
@@ -73,8 +79,11 @@ def main():
     with open(OUTPUT_FILE, "w") as f:
         json.dump(all_events, f, indent=2, ensure_ascii=False)
 
+    total_elapsed = time.time() - total_start
+
     print(f"\n=== 結果 ===")
     print(f"共 {len(all_events)} 筆事件，已寫入 {OUTPUT_FILE}")
+    print(f"總耗時: {total_elapsed:.2f}s（同步逐一送）")
 
     # 4. Alert 摘要
     if alerts:

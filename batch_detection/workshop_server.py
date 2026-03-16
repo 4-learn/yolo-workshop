@@ -16,45 +16,37 @@ batch_detection/
 
 題目：
 1. 完成 POST /detect endpoint
-2. 接收上傳圖片 + min_confidence query parameter
+2. 接收上傳圖片，存成 temp.jpg
 3. 跑 YOLO 偵測，組成事件 JSON 陣列
 4. 如果有 head_detected → response 加上 alert: true
 """
 
-from fastapi import FastAPI, UploadFile, Query
+from fastapi import FastAPI, UploadFile
 from ultralytics import YOLO
 from datetime import datetime, timezone
-import tempfile
 import os
 
-app = FastAPI(title="PPE Detection API")
+app = FastAPI()
 
 # PPE 模型：0=head（沒戴安全帽）, 1=helmet（有戴安全帽）
-# 偵測到 head → alert
 LABEL_MAP = {0: "head", 1: "helmet"}
-ALERT_CLASSES = {"head"}
-MODEL_PATH = "best.pt"
-
-# 啟動時載入模型（只載入一次）
-model = YOLO(MODEL_PATH)
+model = YOLO("best.pt")
 
 
 @app.post("/detect")
-async def detect(
-    file: UploadFile,
-    min_confidence: float = Query(default=0.0, ge=0.0, le=1.0),
-):
+async def detect(file: UploadFile):
     """
     接收圖片，回傳偵測事件 JSON
 
     TODO: 完成以下步驟
-    1. 把上傳的圖片存成暫存檔（提示：tempfile.NamedTemporaryFile）
-    2. 用 model() 對暫存檔跑 YOLO 推論
-    3. 遍歷 results[0].boxes，組成事件 dict 陣列
-       提示：label = LABEL_MAP.get(class_id, f"unknown_{class_id}")
-    4. 如果 label in ALERT_CLASSES → 設 has_alert = True
-    5. 回傳 {"source_image": ..., "event_count": ..., "alert": ..., "events": [...]}
-    6. 記得刪除暫存檔
+    1. 用 await file.read() 讀取上傳的圖片內容
+    2. 用 open("temp.jpg", "wb") 存到本地
+    3. 用 model("temp.jpg") 跑 YOLO 推論
+    4. 遍歷 results[0].boxes，組成事件 dict 陣列
+       - label = LABEL_MAP[class_id]
+    5. 如果 label == "head" → 設 has_alert = True
+    6. 用 os.remove("temp.jpg") 清理暫存檔
+    7. 回傳 {"source_image": ..., "event_count": ..., "alert": ..., "events": [...]}
     """
     # --- 你的程式碼寫在這裡 ---
 

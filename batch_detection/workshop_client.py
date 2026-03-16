@@ -17,23 +17,24 @@ import requests
 import json
 import os
 import sys
+import time
+from datetime import datetime
 
 API_URL = "http://localhost:8000/detect"
 IMAGE_DIR = "images"
 OUTPUT_FILE = "results.json"
 
 
-def detect_image(image_path):
+def detect_image(filename):
     """
     送一張圖片給 API，回傳偵測結果
 
     TODO: 完成以下步驟
-    1. 用 open() 讀取圖片（binary mode）
-    2. 用 requests.post() 送到 API_URL
-       提示：files={"file": (filename, f, "image/jpeg")}
-    3. 回傳 response.json()
+    1. 用 os.path.join(IMAGE_DIR, filename) 組出完整路徑
+    2. 用 open(..., "rb") 讀取圖片
+    3. 用 requests.post(API_URL, files={"file": (filename, f, "image/jpeg")}) 送出
+    4. 回傳 response.json()
     """
-    filename = os.path.basename(image_path)
     # --- 你的程式碼寫在這裡 ---
 
     return {}
@@ -46,15 +47,7 @@ def main():
         print(f"找不到 {IMAGE_DIR}/ 目錄，請建立並放入測試圖片")
         sys.exit(1)
 
-    image_files = sorted(
-        f for f in os.listdir(IMAGE_DIR)
-        if f.lower().endswith((".jpg", ".jpeg", ".png"))
-    )
-
-    if not image_files:
-        print(f"{IMAGE_DIR}/ 目錄是空的，請放入測試圖片")
-        sys.exit(1)
-
+    image_files = sorted(os.listdir(IMAGE_DIR))
     total = len(image_files)
     all_events = []
     alerts = []
