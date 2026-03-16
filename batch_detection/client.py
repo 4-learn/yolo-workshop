@@ -10,8 +10,7 @@
 收集所有事件，寫入 results.json。
 """
 
-import asyncio
-import httpx
+import requests
 import json
 import os
 import sys
@@ -21,11 +20,11 @@ IMAGE_DIR = "images"
 OUTPUT_FILE = "results.json"
 
 
-async def detect_image(client: httpx.AsyncClient, image_path: str) -> dict:
+def detect_image(image_path):
     """送一張圖片給 API，回傳偵測結果"""
     filename = os.path.basename(image_path)
     with open(image_path, "rb") as f:
-        response = await client.post(
+        response = requests.post(
             API_URL,
             files={"file": (filename, f, "image/jpeg")},
         )
@@ -33,7 +32,7 @@ async def detect_image(client: httpx.AsyncClient, image_path: str) -> dict:
     return response.json()
 
 
-async def main():
+def main():
     # 1. 收集所有圖片
     if not os.path.isdir(IMAGE_DIR):
         print(f"找不到 {IMAGE_DIR}/ 目錄，請建立並放入測試圖片")
@@ -52,16 +51,11 @@ async def main():
     all_events = []
     alerts = []
 
-    # 2. 批次送圖片（async 並發）
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        tasks = [
-            detect_image(client, os.path.join(IMAGE_DIR, f))
-            for f in image_files
-        ]
-        results = await asyncio.gather(*tasks)
+    # 2. 逐一送圖片
+    for i, filename in enumerate(image_files, 1):
+        image_path = os.path.join(IMAGE_DIR, filename)
+        result = detect_image(image_path)
 
-    # 3. 收集結果
-    for i, (filename, result) in enumerate(zip(image_files, results), 1):
         count = result["event_count"]
         alert_flag = " ⚠️ ALERT: person_detected" if result["alert"] else ""
         print(f"[{i}/{total}] {filename} → {count} events{alert_flag}")
@@ -75,14 +69,14 @@ async def main():
             )
             alerts.append({"image": filename, "person_count": person_count})
 
-    # 4. 寫入 JSON
+    # 3. 寫入 JSON
     with open(OUTPUT_FILE, "w") as f:
         json.dump(all_events, f, indent=2, ensure_ascii=False)
 
     print(f"\n=== 結果 ===")
     print(f"共 {len(all_events)} 筆事件，已寫入 {OUTPUT_FILE}")
 
-    # 5. Alert 摘要
+    # 4. Alert 摘要
     if alerts:
         print(f"\n=== Alert 摘要 ===")
         for a in alerts:
@@ -92,4 +86,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

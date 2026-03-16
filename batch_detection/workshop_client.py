@@ -7,15 +7,13 @@ Workshop：批次偵測 Client（填空版）
   3. 執行: python workshop_client.py
 
 題目：
-1. 讀取 images/ 目錄下所有 .jpg 檔案
-2. 用 httpx.AsyncClient 對每張圖呼叫 POST /detect
-3. 用 asyncio.gather() 同時送出所有請求
-4. 收集結果，寫入 results.json
-5. 印出 alert 摘要
+1. 完成 detect_image()：用 requests.post 送圖片給 API
+2. 在 main() 中逐一送圖片，收集結果
+3. 寫入 results.json
+4. 印出 alert 摘要
 """
 
-import asyncio
-import httpx
+import requests
 import json
 import os
 import sys
@@ -25,13 +23,13 @@ IMAGE_DIR = "images"
 OUTPUT_FILE = "results.json"
 
 
-async def detect_image(client: httpx.AsyncClient, image_path: str) -> dict:
+def detect_image(image_path):
     """
     送一張圖片給 API，回傳偵測結果
 
     TODO: 完成以下步驟
-    1. 用 open() 讀取圖片檔案（binary mode）
-    2. 用 client.post() 送到 API_URL
+    1. 用 open() 讀取圖片（binary mode）
+    2. 用 requests.post() 送到 API_URL
        提示：files={"file": (filename, f, "image/jpeg")}
     3. 回傳 response.json()
     """
@@ -42,7 +40,7 @@ async def detect_image(client: httpx.AsyncClient, image_path: str) -> dict:
     # --- 結束 ---
 
 
-async def main():
+def main():
     # 1. 收集所有圖片
     if not os.path.isdir(IMAGE_DIR):
         print(f"找不到 {IMAGE_DIR}/ 目錄，請建立並放入測試圖片")
@@ -63,10 +61,10 @@ async def main():
 
     """
     TODO: 完成以下步驟
-    2. 建立 httpx.AsyncClient（提示：async with httpx.AsyncClient() as client:）
-    3. 用 asyncio.gather() 同時送出所有圖片
-    4. 遍歷結果，收集 events 和 alerts
-    5. 寫入 results.json
+    2. 用 for loop 逐一送圖片（呼叫 detect_image）
+    3. 印出每張圖的結果和 alert 狀態
+    4. 收集所有 events 到 all_events
+    5. 用 json.dump 寫入 results.json
     6. 印出 alert 摘要
     """
     # --- 你的程式碼寫在這裡 ---
@@ -78,4 +76,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

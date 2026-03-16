@@ -17,7 +17,7 @@ batch_detection/
 ## 環境準備
 
 ```bash
-pip install fastapi uvicorn httpx python-multipart ultralytics
+pip install fastapi uvicorn requests python-multipart ultralytics
 ```
 
 模型 `yolov8n.pt` 會在第一次執行時自動下載。
