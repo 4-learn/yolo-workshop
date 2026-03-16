@@ -8,10 +8,12 @@ Workshop 解答：從圖片到事件
 4. 輸出一個事件陣列
 
 步驟 1-2（在終端機執行）：
-yolo predict model=best.pt source=test.jpg save_txt=True
+yolo predict model=best.pt source=sample_data/test.jpg save_txt=True
 
 執行後會在 runs/detect/predict/labels/ 產生 .txt 檔，
 每行格式：class_id x_center y_center width height
+
+也可以直接用附的範例標註檔 sample_data/test.txt
 
 步驟 3-4（執行本程式）：
 python solution_simple.py
@@ -61,8 +63,9 @@ def convert_file(txt_path, image_name):
 if __name__ == "__main__":
     import os
 
-    # 如果有真的 YOLO 產出，讀取 .txt 檔
+    # 優先讀取 YOLO 產出，其次用附的範例檔
     label_dir = "runs/detect/predict/labels"
+    sample_file = "sample_data/test.txt"
 
     if os.path.isdir(label_dir):
         print("=== 讀取 YOLO 標註檔 ===\n")
@@ -72,20 +75,15 @@ if __name__ == "__main__":
                 image_name = filename.replace(".txt", ".jpg")
                 filepath = os.path.join(label_dir, filename)
                 events.extend(convert_file(filepath, image_name))
-        print(json.dumps(events, indent=2, ensure_ascii=False))
-        print(f"\n共 {len(events)} 筆事件")
+
+    elif os.path.isfile(sample_file):
+        print("=== 讀取範例標註檔 sample_data/test.txt ===\n")
+        events = convert_file(sample_file, "test.jpg")
 
     else:
-        # 沒有 YOLO 產出，用模擬資料示範
-        print("=== 模擬 YOLO 標註（尚未執行 yolo predict）===\n")
-        mock_labels = [
-            "0 0.45 0.32 0.12 0.28",  # helmet
-            "1 0.60 0.35 0.10 0.25",  # no_helmet
-            "0 0.20 0.40 0.11 0.30",  # helmet
-        ]
-        events = []
-        for line in mock_labels:
-            events.append(label_to_event(line, "frame_001.jpg"))
-        print(json.dumps(events, indent=2, ensure_ascii=False))
-        print(f"\n共 {len(events)} 筆事件")
-        print("\n提示：執行 yolo predict model=best.pt source=test.jpg save_txt=True 產生真的標註檔")
+        print("找不到標註檔，請先執行：")
+        print("  yolo predict model=best.pt source=sample_data/test.jpg save_txt=True")
+        exit(1)
+
+    print(json.dumps(events, indent=2, ensure_ascii=False))
+    print(f"\n共 {len(events)} 筆事件")
