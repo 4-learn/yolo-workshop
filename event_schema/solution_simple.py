@@ -22,12 +22,10 @@ python solution_simple.py
 from datetime import datetime, timezone
 import json
 
-# 類別對應表（依你的 YOLO 模型而定）
+# 類別對應表（對應 PPE 模型：0=head, 1=helmet）
 LABEL_MAP = {
-    0: "helmet",
-    1: "no_helmet",
-    2: "vest",
-    3: "no_vest",
+    0: "head",
+    1: "helmet",
 }
 
 
