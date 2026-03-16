@@ -1,87 +1,79 @@
 """
-Workshop 解答：從圖片到事件
+Workshop 解答：從圖片到事件 JSON（整合版）
 
-題目：
-1. 使用 yolo predict 對一張圖片進行推論
-2. 產生 .txt 標註檔
-3. 撰寫 Python 程式，把標註轉成事件 JSON
-4. 輸出一個事件陣列
+整合 YOLO 推論 + 事件轉換，一支程式搞定：
+  輸入圖片 → YOLO 偵測 → 事件 JSON 陣列
 
-步驟 1-2（在終端機執行）：
-yolo predict model=best.pt source=sample_data/test.jpg save_txt=True
+目錄結構：
+event_schema/
+├── workshop.py          ← 學生填空版
+├── solution_simple.py   ← 本檔案（解答）
+├── best.pt              ← 訓練好的 YOLO 模型
+└── sample_data/
+    ├── test.jpg         ← 輸入：測試圖片
+    └── test.txt         ← 參考：YOLO 標註格式
 
-執行後會在 runs/detect/predict/labels/ 產生 .txt 檔，
-每行格式：class_id x_center y_center width height
-
-也可以直接用附的範例標註檔 sample_data/test.txt
-
-步驟 3-4（執行本程式）：
-python solution_simple.py
+執行方式：
+  python solution_simple.py
 """
 
+from ultralytics import YOLO
 from datetime import datetime, timezone
 import json
+import os
 
-# 類別對應表（對應 PPE 模型：0=head, 1=helmet）
-LABEL_MAP = {
-    0: "head",
-    1: "helmet",
-}
+LABEL_MAP = {0: "head", 1: "helmet"}
 
 
-def label_to_event(label_line, image_name):
-    """把一行 YOLO .txt 標註轉成事件 dict"""
-    parts = label_line.strip().split()
-    class_id = int(parts[0])
+def detect_and_convert(image_path, model_path="best.pt", min_confidence=0.0):
+    """
+    輸入圖片路徑，回傳事件 JSON 陣列
 
-    return {
-        "event_type": f"{LABEL_MAP.get(class_id, 'unknown')}_detected",
-        "source_image": image_name,
-        "bbox": {
-            "x_center": float(parts[1]),
-            "y_center": float(parts[2]),
-            "width": float(parts[3]),
-            "height": float(parts[4]),
-        },
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+    Args:
+        image_path: 圖片路徑
+        model_path: YOLO 模型路徑
+        min_confidence: 最低信心閾值（延伸題：設為 0.5）
 
+    Returns:
+        事件 dict 的 list
+    """
+    # 1. 載入模型
+    model = YOLO(model_path)
 
-def convert_file(txt_path, image_name):
-    """讀取整個 .txt 標註檔，回傳事件陣列"""
+    # 2. 對圖片推論
+    results = model(image_path)
+
+    # 3. 遍歷偵測結果，組成事件陣列
     events = []
-    with open(txt_path) as f:
-        for line in f:
-            if line.strip():
-                events.append(label_to_event(line, image_name))
+    for box in results[0].boxes:
+        class_id = int(box.cls[0])
+        confidence = float(box.conf[0])
+        x1, y1, x2, y2 = box.xyxy[0].tolist()
+
+        # 過濾低信心結果
+        if confidence < min_confidence:
+            continue
+
+        label = LABEL_MAP.get(class_id, f"unknown_{class_id}")
+
+        event = {
+            "event_type": f"{label}_detected",
+            "confidence": round(confidence, 4),
+            "bbox": {
+                "x1": round(x1, 2),
+                "y1": round(y1, 2),
+                "x2": round(x2, 2),
+                "y2": round(y2, 2),
+            },
+            "source_image": os.path.basename(image_path),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        events.append(event)
+
     return events
 
 
-# === 主程式 ===
 if __name__ == "__main__":
-    import os
-
-    # 優先讀取 YOLO 產出，其次用附的範例檔
-    label_dir = "runs/detect/predict/labels"
-    sample_file = "sample_data/test.txt"
-
-    if os.path.isdir(label_dir):
-        print("=== 讀取 YOLO 標註檔 ===\n")
-        events = []
-        for filename in sorted(os.listdir(label_dir)):
-            if filename.endswith(".txt"):
-                image_name = filename.replace(".txt", ".jpg")
-                filepath = os.path.join(label_dir, filename)
-                events.extend(convert_file(filepath, image_name))
-
-    elif os.path.isfile(sample_file):
-        print("=== 讀取範例標註檔 sample_data/test.txt ===\n")
-        events = convert_file(sample_file, "test.jpg")
-
-    else:
-        print("找不到標註檔，請先執行：")
-        print("  yolo predict model=best.pt source=sample_data/test.jpg save_txt=True")
-        exit(1)
-
+    events = detect_and_convert("sample_data/test.jpg")
     print(json.dumps(events, indent=2, ensure_ascii=False))
     print(f"\n共 {len(events)} 筆事件")
