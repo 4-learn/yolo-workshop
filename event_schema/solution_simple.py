@@ -2,11 +2,18 @@
 Workshop 解答：從圖片到事件
 
 題目：
-1. 使用 yolo predict 對一張圖片進行推論，產生 .txt 標註檔
-2. 撰寫 Python 程式，把標註轉成事件 JSON
-3. 輸出一個事件陣列
+1. 使用 yolo predict 對一張圖片進行推論
+2. 產生 .txt 標註檔
+3. 撰寫 Python 程式，把標註轉成事件 JSON
+4. 輸出一個事件陣列
 
-執行方式：
+步驟 1-2（在終端機執行）：
+yolo predict model=best.pt source=test.jpg save_txt=True
+
+執行後會在 runs/detect/predict/labels/ 產生 .txt 檔，
+每行格式：class_id x_center y_center width height
+
+步驟 3-4（執行本程式）：
 python solution_simple.py
 """
 
@@ -50,20 +57,35 @@ def convert_file(txt_path, image_name):
     return events
 
 
-# === 測試（不需要真的跑 YOLO，用模擬資料）===
+# === 主程式 ===
 if __name__ == "__main__":
-    # 模擬 YOLO 產生的 .txt 內容（每行：class_id x_center y_center width height）
-    mock_labels = [
-        "0 0.45 0.32 0.12 0.28",  # helmet
-        "1 0.60 0.35 0.10 0.25",  # no_helmet
-        "0 0.20 0.40 0.11 0.30",  # helmet
-    ]
+    import os
 
-    print("=== YOLO 標註轉事件 JSON ===\n")
+    # 如果有真的 YOLO 產出，讀取 .txt 檔
+    label_dir = "runs/detect/predict/labels"
 
-    events = []
-    for line in mock_labels:
-        events.append(label_to_event(line, "frame_001.jpg"))
+    if os.path.isdir(label_dir):
+        print("=== 讀取 YOLO 標註檔 ===\n")
+        events = []
+        for filename in sorted(os.listdir(label_dir)):
+            if filename.endswith(".txt"):
+                image_name = filename.replace(".txt", ".jpg")
+                filepath = os.path.join(label_dir, filename)
+                events.extend(convert_file(filepath, image_name))
+        print(json.dumps(events, indent=2, ensure_ascii=False))
+        print(f"\n共 {len(events)} 筆事件")
 
-    print(json.dumps(events, indent=2, ensure_ascii=False))
-    print(f"\n共 {len(events)} 筆事件")
+    else:
+        # 沒有 YOLO 產出，用模擬資料示範
+        print("=== 模擬 YOLO 標註（尚未執行 yolo predict）===\n")
+        mock_labels = [
+            "0 0.45 0.32 0.12 0.28",  # helmet
+            "1 0.60 0.35 0.10 0.25",  # no_helmet
+            "0 0.20 0.40 0.11 0.30",  # helmet
+        ]
+        events = []
+        for line in mock_labels:
+            events.append(label_to_event(line, "frame_001.jpg"))
+        print(json.dumps(events, indent=2, ensure_ascii=False))
+        print(f"\n共 {len(events)} 筆事件")
+        print("\n提示：執行 yolo predict model=best.pt source=test.jpg save_txt=True 產生真的標註檔")
