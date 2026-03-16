@@ -10,7 +10,7 @@ Workshop 解答：從圖片到事件
 python solution_simple.py
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 
 # 類別對應表（依你的 YOLO 模型而定）
@@ -36,7 +36,7 @@ def label_to_event(label_line, image_name):
             "width": float(parts[3]),
             "height": float(parts[4]),
         },
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
