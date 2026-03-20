@@ -1,0 +1,16 @@
+alert_threshold: 2
+rules:
+- action: ignore
+  max_confidence: 0.6016
+  name: 低信心忽略
+- action: alert
+  event_type: head_detected
+  min_confidence: 0.7471
+  name: 沒戴安全帽（高信心）
+  severity: high
+- action: warning
+  event_type: head_detected
+  name: 沒戴安全帽（中信心）
+  severity: low
+- action: ok
+  name: 預設
