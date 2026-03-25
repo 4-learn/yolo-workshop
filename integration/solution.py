@@ -1,8 +1,8 @@
 """
-解答：系統整合 — 從偵測結果到分析報告
+解答：系統整合 — 動態門檻管線
 
-把前面學的模組串起來：
-  偵測結果 → 規則比對 → pandas 分析 → 告警報告
+每 N 筆事件用 sklearn KMeans 重新算門檻，
+用新門檻跑規則比對 + pandas 分析 + 報告。
 
 執行方式：
   python solution.py
@@ -11,9 +11,10 @@
 import yaml
 import json
 import pandas as pd
+from sklearn.cluster import KMeans
 
 
-# === 第一步：規則比對（來自 rule_engine） ===
+# === 規則比對 ===
 
 def load_rules(yaml_path):
     """讀取 YAML 規則檔"""
@@ -22,7 +23,7 @@ def load_rules(yaml_path):
 
 
 def check_event(event, rules):
-    """用規則比對一筆事件，回傳第一條符合的規則"""
+    """用規則比對一筆事件"""
     for rule in rules:
         if "event_type" in rule:
             if event["event_type"] != rule["event_type"]:
@@ -54,120 +55,138 @@ def process_events(events, config):
     return results
 
 
-# === 第二步：pandas 分析（來自 pandas_analysis） ===
+# === sklearn 校準 ===
 
-def analyze(results):
-    """用 pandas 做統計分析"""
-    df = pd.DataFrame(results)
+def recalibrate(events):
+    """用 KMeans 對 confidence 分群，回傳建議門檻"""
+    df = pd.DataFrame(events)
+    X = df[["confidence"]]
 
-    print("=== 資料總覽 ===")
-    print(f"總筆數: {len(df)}")
-    print()
+    kmeans = KMeans(n_clusters=3, random_state=42)
+    kmeans.fit(X)
+    centers = sorted(kmeans.cluster_centers_.flatten())
 
-    # 各 action 數量
-    print("=== 各 action 數量 ===")
-    print(df["action"].value_counts())
-    print()
-
-    # 每張圖統計
-    print("=== 每張圖的事件數 ===")
-    print(df.groupby("source_image")["action"].count())
-    print()
-
-    # 違規事件
-    violations = df[df["action"].isin(["alert", "warning"])]
-    print("=== 違規事件 ===")
-    print(violations[["source_image", "event_type", "confidence", "action"]])
-    print(f"\n共 {len(violations)} 筆違規")
-    print()
-
-    # 信心度統計
-    print("=== 各類型平均信心度 ===")
-    print(df.groupby("event_type")["confidence"].mean())
-    print()
-
-    return df
-
-
-# === 第三步：聚合告警（N 張圖門檻） ===
-
-def aggregate_alerts(df, threshold):
-    """統計有 alert 的圖片，判斷是否發佈"""
-    alerts = df[df["action"] == "alert"]
-    alert_images = alerts["source_image"].unique().tolist()
-
-    should_alert = len(alert_images) >= threshold
+    threshold_low = round(float((centers[0] + centers[1]) / 2), 4)
+    threshold_high = round(float((centers[1] + centers[2]) / 2), 4)
 
     return {
-        "alert_images": alert_images,
-        "alert_image_count": len(alert_images),
-        "should_alert": should_alert,
-        "threshold": threshold,
+        "centers": [round(float(c), 4) for c in centers],
+        "threshold_low": threshold_low,
+        "threshold_high": threshold_high,
     }
 
 
-# === 第四步：產生報告 ===
-
-def generate_report(df, agg):
-    """產生最終報告"""
-    print("=" * 50)
-    print("          工安監控系統 — 分析報告")
-    print("=" * 50)
-
-    # 總覽
-    total = len(df)
-    alerts = len(df[df["action"] == "alert"])
-    warnings = len(df[df["action"] == "warning"])
-    ok = len(df[df["action"] == "ok"])
-
-    print(f"\n總偵測事件: {total}")
-    print(f"  alert:   {alerts}")
-    print(f"  warning: {warnings}")
-    print(f"  ok:      {ok}")
-
-    # 圖片層級
-    print(f"\n有 alert 的圖片: {agg['alert_images']}")
-    print(f"門檻: {agg['threshold']} 張")
-
-    if agg["should_alert"]:
-        print(f"\n🚨 發佈 ALERT：{agg['alert_image_count']} 張圖有違規（>= {agg['threshold']}）")
-    else:
-        print(f"\n✅ 不發佈：只有 {agg['alert_image_count']} 張圖有 alert，未達門檻")
-
-    # 建議
-    print("\n--- 建議 ---")
-    if alerts > 0:
-        top_image = df[df["action"] == "alert"]["source_image"].value_counts().index[0]
-        print(f"  最多違規的圖片: {top_image}")
-        print(f"  建議優先處理該區域的安全帽佩戴狀況")
-    else:
-        print("  無違規，持續監控中")
-
-    print()
+def make_rules_config(thresholds):
+    """用門檻產生 rules config（不寫檔，直接用）"""
+    return {
+        "rules": [
+            {"name": "低信心忽略", "max_confidence": thresholds["threshold_low"], "action": "ignore"},
+            {"name": "沒戴安全帽（高信心）", "event_type": "head_detected",
+             "min_confidence": thresholds["threshold_high"], "action": "alert", "severity": "high"},
+            {"name": "沒戴安全帽（中信心）", "event_type": "head_detected",
+             "action": "warning", "severity": "low"},
+            {"name": "預設", "action": "ok"},
+        ],
+        "alert_threshold": 2,
+    }
 
 
-# === 主程式：串起來 ===
+# === pandas 分析 ===
+
+def summarize(results):
+    """統計摘要"""
+    df = pd.DataFrame(results)
+    return {
+        "total": len(df),
+        "alert": int(df[df["action"] == "alert"].shape[0]),
+        "warning": int(df[df["action"] == "warning"].shape[0]),
+        "ok": int(df[df["action"] == "ok"].shape[0]),
+        "ignore": int(df[df["action"] == "ignore"].shape[0]),
+        "alert_images": df[df["action"] == "alert"]["source_image"].unique().tolist(),
+    }
+
+
+def generate_report(label, stats, thresholds=None):
+    """產生報告"""
+    print(f"\n{'=' * 50}")
+    print(f"  {label}")
+    print(f"{'=' * 50}")
+
+    if thresholds:
+        print(f"  門檻: max_confidence={thresholds['threshold_low']}, min_confidence={thresholds['threshold_high']}")
+
+    print(f"\n  總事件: {stats['total']}")
+    print(f"    alert:   {stats['alert']}")
+    print(f"    warning: {stats['warning']}")
+    print(f"    ok:      {stats['ok']}")
+    print(f"    ignore:  {stats['ignore']}")
+    print(f"  alert 圖片: {stats['alert_images']}")
+
+
+# === 主程式：動態門檻管線 ===
 
 if __name__ == "__main__":
-    # 1. 載入原始偵測結果
+    RECALIBRATE_EVERY = 7  # 每 7 筆事件重新校準
+
+    # 1. 載入偵測結果
     with open("../rule_engine/sample_results.json") as f:
         events = json.load(f)
-    print(f"讀取 {len(events)} 筆偵測事件\n")
+    print(f"讀取 {len(events)} 筆偵測事件")
+    print(f"每 {RECALIBRATE_EVERY} 筆重新校準門檻\n")
 
-    # 2. 載入規則
-    config = load_rules("../rule_engine/rules.yaml")
-    print(f"載入 {len(config['rules'])} 條規則")
-    print(f"聚合門檻: {config['alert_threshold']} 張圖\n")
+    # 2. 先用舊門檻跑一次（基準）
+    old_config = load_rules("../rule_engine/rules.yaml")
+    old_results = process_events(events, old_config)
+    old_stats = summarize(old_results)
+    generate_report("基準：舊門檻（人工設定 0.5 / 0.7）", old_stats)
 
-    # 3. 規則比對
-    results = process_events(events, config)
-    print(f"完成規則比對: {len(results)} 筆\n")
+    # 3. 動態管線：逐筆處理，每 N 筆校準一次
+    print(f"\n\n{'#' * 50}")
+    print(f"  動態管線開始")
+    print(f"{'#' * 50}")
 
-    # 4. pandas 分析
-    df = analyze(results)
+    accumulated = []
+    current_config = old_config
+    calibration_count = 0
 
-    # 5. 聚合告警
-    agg = aggregate_alerts(df, config["alert_threshold"])
+    for i, event in enumerate(events):
+        accumulated.append(event)
 
-    # 6. 產生報告
-    generate_report(df, agg)
+        # 每 N 筆觸發校準
+        if len(accumulated) % RECALIBRATE_EVERY == 0 and len(accumulated) >= 10:
+            calibration_count += 1
+            thresholds = recalibrate(accumulated)
+            current_config = make_rules_config(thresholds)
+            print(f"\n  🔄 第 {len(accumulated)} 筆，校準 #{calibration_count}")
+            print(f"     群中心: {thresholds['centers']}")
+            print(f"     新門檻: {thresholds['threshold_low']} / {thresholds['threshold_high']}")
+
+    # 4. 用最終門檻跑全部事件
+    new_results = process_events(events, current_config)
+    new_stats = summarize(new_results)
+
+    thresholds = recalibrate(accumulated)
+    generate_report("結果：動態門檻（sklearn 校準）", new_stats, thresholds)
+
+    # 5. 比較
+    print(f"\n\n{'=' * 50}")
+    print(f"  新舊比較")
+    print(f"{'=' * 50}")
+    print(f"\n{'':>15} {'舊門檻':>8} {'新門檻':>8} {'差異':>8}")
+    print("-" * 45)
+    for key in ["alert", "warning", "ok", "ignore"]:
+        old_val = old_stats[key]
+        new_val = new_stats[key]
+        diff = new_val - old_val
+        diff_str = f"+{diff}" if diff > 0 else str(diff)
+        print(f"{key:>15} {old_val:>8} {new_val:>8} {diff_str:>8}")
+
+    diff_alert = new_stats["alert"] - old_stats["alert"]
+    if diff_alert < 0:
+        print(f"\n  新門檻較嚴格：alert 減少 {abs(diff_alert)} 筆")
+    elif diff_alert > 0:
+        print(f"\n  新門檻較寬鬆：alert 增加 {diff_alert} 筆")
+    else:
+        print(f"\n  alert 數量相同，但門檻有資料依據了")
+
+    print()
